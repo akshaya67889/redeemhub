@@ -1,0 +1,40 @@
+name: Import RedeemHub source
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Validate and expand source archive
+        run: |
+          python3 - <<'PY'
+          import pathlib, zipfile
+          archive = pathlib.Path('redeemhub-source.zip')
+          with zipfile.ZipFile(archive) as z:
+              for entry in z.infolist():
+                  path = pathlib.PurePosixPath(entry.filename)
+                  assert not path.is_absolute() and '..' not in path.parts
+                  assert path.parts[0] not in ('.git', '.github', 'node_modules', 'dist')
+                  assert not path.name.startswith('.env') or entry.filename == '.env.example'
+              assert z.testzip() is None
+              z.extractall('.')
+          archive.unlink()
+          PY
+      - name: Verify source
+        run: npm ci && npm run typecheck && npm run build
+      - name: Commit expanded source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all -- . ':!.github'
+          git diff --cached --quiet || git commit -m 'Import RedeemHub source'
+          git push origin HEAD:main
